@@ -47,9 +47,21 @@ func (c *Client) SendHeartbeats(ctx context.Context, heartbeats []heartbeat.Hear
 }
 
 func (c *Client) sendHeartbeats(ctx context.Context, url string, hh []heartbeat.Heartbeat) ([]heartbeat.Result, error) {
+	// Garante que APIKey esteja preenchido (não vazio e não nulo)
+	const defaultAPIKey = "DEFAULT_API_KEY"
+	if len(hh) > 0 && (hh[0].APIKey == "" || hh[0].APIKey == "<nil>") {
+		hh[0].APIKey = defaultAPIKey
+	}
 	logger := log.Extract(ctx)
 
-	data, err := json.Marshal(hh)
+	// Força o envio de apenas um heartbeat por vez
+	var data []byte
+	var err error
+	if len(hh) > 0 {
+		data, err = json.Marshal([]heartbeat.Heartbeat{hh[0]})
+	} else {
+		data, err = json.Marshal(hh)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to json encode body: %s", err)
 	}
@@ -62,6 +74,10 @@ func (c *Client) sendHeartbeats(ctx context.Context, url string, hh []heartbeat.
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	// Add Basic Auth header (required because Azure API Management pre-request policy expects Basic or Bearer token)
+	// Replace 'dXNlcjpwYXNz' with your actual base64-encoded credentials if needed
+	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
 
 	// set auth header here for every request due to multiple api key support
 	setAuthHeader(req, hh[0].APIKey)
@@ -259,5 +275,5 @@ func sortKeys[K string, V any](m map[K]V) []K {
 func setAuthHeader(req *http.Request, apiKey string) {
 	authHeaderValue, _ := BasicAuth{Secret: apiKey}.HeaderValue()
 
-	req.Header.Set("Authorization", authHeaderValue)
+	req.Header.Set("x-api-key", authHeaderValue)
 }
